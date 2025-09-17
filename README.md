@@ -96,9 +96,9 @@ amazon-cloudwatch-generative-ai-observability-samples/
 
 ## Deployment Options
 
-### 1. AWS Bedrock AgentCore Deployment
+### 1. Amazon Bedrock AgentCore Deployment
 
-Deploy the weather agent using AWS Bedrock AgentCore for serverless AI agent hosting.
+Deploy the weather agent using Amazon Bedrock AgentCore for serverless AI agent hosting.
 
 **Quick Start:**
 
@@ -110,7 +110,7 @@ cd bedrock-agentcore-observability
 **Key Components:**
 
 - Python agent with Strands framework
-- AWS Bedrock AgentCore runtime
+- Amazon Bedrock AgentCore runtime
 - IAM role for execution permissions
 - OpenTelemetry tracing integration
 - CloudWatch observability

@@ -1,10 +1,10 @@
-# AWS Bedrock AgentCore Observability Example
+# Amazon Bedrock AgentCore Observability Example
 
-A demonstration project showing how to build and deploy a generative AI agent using AWS Bedrock AgentCore with comprehensive CloudWatch observability. This agent uses the Strands framework and includes OpenTelemetry tracing for complete monitoring and observability.
+A demonstration project showing how to build and deploy a generative AI agent using Amazon Bedrock AgentCore with comprehensive CloudWatch observability. This agent uses the Strands framework and includes OpenTelemetry tracing for complete monitoring and observability.
 
 ## Prerequisites
 
-- An AWS account with AWS Identity and Access Management (IAM) permissions for Amazon Bedrock, Amazon CloudWatch, AWS X-Ray, and AWS Bedrock AgentCore
+- An AWS account with AWS Identity and Access Management (IAM) permissions for Amazon Bedrock, Amazon CloudWatch, AWS X-Ray, and Amazon Bedrock AgentCore
 - [AWS CLI](https://aws.amazon.com/cli/) installed and configured
 - Python 3.10 or later
 - Container runtime (Docker/Finch/Podman) for agent deployment
@@ -153,7 +153,7 @@ The agent automatically includes these trace attributes:
 
 For issues related to:
 
-- **AgentCore**: Check the [AWS Bedrock AgentCore documentation](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/agents-tools-runtime.html)
+- **AgentCore**: Check the [Amazon Bedrock AgentCore documentation](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/agents-tools-runtime.html)
 - **Strands Framework**: Refer to the [Strands agents documentation](https://strandsagents.com/latest/documentation/docs/)
 - **OpenTelemetry**: See the [AWS OpenTelemetry documentation](https://opentelemetry.io/docs/)
 
