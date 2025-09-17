@@ -1,0 +1,333 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'EC2 deployment for Weather Agent'
+
+Parameters:
+  InstanceName:
+    Type: String
+    Default: weather-agent-ec2
+    Description: Name of the EC2 instance
+  InstanceType:
+    Type: String
+    Default: t3.micro
+    AllowedValues: [t3.micro, t3.small, t3.medium]
+    Description: EC2 instance type
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${InstanceName}-vpc
+
+  # VPC Flow Log
+  VPCFlowLog:
+    Type: AWS::EC2::FlowLog
+    Properties:
+      ResourceType: VPC
+      ResourceId: !Ref VPC
+      TrafficType: ALL
+      LogDestinationType: cloud-watch-logs
+      LogGroupName: !Sub '/aws/vpc/flowlogs/${InstanceName}'
+      DeliverLogsPermissionArn: !GetAtt FlowLogRole.Arn
+      Tags:
+        - Key: Name
+          Value: !Sub ${InstanceName}-vpc-flowlog
+
+  # IAM Role for VPC Flow Logs
+  FlowLogRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: vpc-flow-logs.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: FlowLogDeliveryRolePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:DescribeLogGroups
+                  - logs:DescribeLogStreams
+                Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/vpc/flowlogs/${InstanceName}:*'
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub ${InstanceName}-igw
+
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [0, !GetAZs '']
+      CidrBlock: 10.0.1.0/24
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${InstanceName}-public-subnet
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${InstanceName}-public-routes
+
+  DefaultPublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet
+
+  # Security Group
+  EC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for EC2 instance
+      VpcId: !Ref VPC
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: Allow HTTPS outbound for AWS API calls
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+          Description: Allow HTTP outbound for package downloads
+
+  # IAM Role for EC2
+  EC2Role:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: BedrockPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: BedrockModelInvocation
+                Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                Resource:
+                  - arn:aws:bedrock:*::foundation-model/*
+                  - !Sub 'arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:*'
+
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref EC2Role
+
+  # EC2 Instance
+  EC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Sub '{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-6.1-x86_64}}'
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile: !Ref EC2InstanceProfile
+      SecurityGroupIds:
+        - !Ref EC2SecurityGroup
+      SubnetId: !Ref PublicSubnet
+      AssociatePublicIpAddress: true
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          yum update -y
+          
+          # Install Python 3.12 (available on Amazon Linux 2023)
+          yum install -y python3.12 python3.12-pip
+          
+          # Create application directory
+          mkdir -p /opt/weather-agent
+          cd /opt/weather-agent
+          
+          # Create virtual environment with Python 3.12
+          python3.12 -m venv venv
+          source venv/bin/activate
+          
+          # Upgrade pip in venv
+          pip install --upgrade pip
+          
+          # Install dependencies
+          cat > requirements.txt << 'EOF'
+          strands-agents[otel]
+          strands-agents-tools
+          aws-opentelemetry-distro>=0.10.0
+          boto3
+          EOF
+          
+          pip install -r requirements.txt
+          
+          # Create application file
+          cat > app.py << 'EOF'
+          #!/usr/bin/env python3
+          
+          from strands import Agent
+          from strands_tools import http_request
+          from strands.models import BedrockModel
+          import logging
+          import os
+          
+          # Configure the strands logger
+          strands_logger = logging.getLogger("strands")
+          strands_logger.setLevel(logging.INFO)
+          
+          # Define a weather-focused system prompt
+          WEATHER_SYSTEM_PROMPT = """You are a weather assistant with HTTP capabilities. You can:
+          
+          1. Make HTTP requests to the National Weather Service API
+          2. Process and display weather forecast data
+          3. Provide weather information for locations in the United States
+          
+          When retrieving weather information:
+          1. First get the coordinates or grid information using https://api.weather.gov/points/{latitude},{longitude} or https://api.weather.gov/points/{zipcode}
+          2. IMPORTANT: Always convert latitude and longitude values to strings before using them in URLs
+          3. Then use the returned forecast URL to get the actual forecast
+          
+          When displaying responses:
+          - Format weather data in a human-readable way
+          - Highlight important information like temperature, precipitation, and alerts
+          - Handle errors appropriately
+          - Convert technical terms to user-friendly language
+          
+          Always explain the weather conditions clearly and provide context for the forecast.
+          
+          EXAMPLE URL FORMAT:
+          For coordinates: https://api.weather.gov/points/47.6062,-122.3321
+          Note that both values are converted to strings and separated by a comma with no space.
+          Always explain the weather conditions clearly and provide context for the forecast.
+          """
+          
+          
+          # Create a Bedrock model
+          bedrock_model = BedrockModel(
+              model_id="us.anthropic.claude-sonnet-4-20250514-v1:0",  # Change model_id if needed
+              region_name=os.environ.get("AWS_REGION", "us-east-1")  # Change region_name if needed
+          )
+          
+          # Create an agent with HTTP capabilities
+          weather_agent = Agent(
+              model=bedrock_model,
+              system_prompt=WEATHER_SYSTEM_PROMPT,
+              tools=[http_request],
+              trace_attributes={
+                  "session.id": "abc-1234",
+                  "user.email": "demo@example.com",
+                  "user.id": "demo-123",
+                  "tags": [
+                      "Python-AgentSDK",
+                      "Observability-Tags",
+                      "CloudWatch-Demo"
+                  ]
+              },  
+          )
+          
+          # Example usage
+          if __name__ == "__main__":
+              print("\nWeather Forecaster Strands Agent on EC2\n")
+              print("This example demonstrates using Strands Agents' HTTP request capabilities")
+              print("to get weather forecasts from the National Weather Service API.")
+              print("\nOptions:")
+              print("  'demo weather' - Demonstrate weather API capabilities")
+              print("  'exit' - Exit the program")
+              print("\nOr simply ask about the weather in any US location:")
+              print("  'What's the weather like in San Francisco?'")
+              print("  'Will it rain tomorrow in Miami?'")
+          
+              # Interactive loop
+              while True:
+                  try:
+                      user_input = input("\n> ")
+          
+                      if user_input.lower() == "exit":
+                          print("\nGoodbye! 👋")
+                          break
+          
+                      # Call the weather agent
+                      response = weather_agent(user_input)
+                      
+                      print(str(response))
+          
+                      # Inject trace_id for Trace to Log correlation
+                      strands_logger.info(str(response))
+                       
+                  except KeyboardInterrupt:
+                      print("\n\nExecution interrupted. Exiting...")
+                      break
+                  except Exception as e:
+                      print(f"\nAn error occurred: {str(e)}")
+                      print("Please try a different request.")
+          EOF
+          
+          # Set environment variables
+          cat > /etc/environment << 'EOF'
+          AWS_REGION=${AWS::Region}
+          AWS_DEFAULT_REGION=${AWS::Region}
+          OTEL_PYTHON_DISTRO=aws_distro
+          OTEL_PYTHON_CONFIGURATOR=aws_configurator
+          OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+          OTEL_TRACES_EXPORTER=otlp
+          OTEL_EXPORTER_OTLP_LOGS_HEADERS=x-aws-log-group=weather-agent-logs,x-aws-log-stream=ec2,x-aws-metric-namespace=weather-agent-ec2
+          OTEL_RESOURCE_ATTRIBUTES=service.name=weather-agent-ec2,aws.log.group.names=weather-agent-logs,deployment.environment.name=EC2
+          AGENT_OBSERVABILITY_ENABLED=true
+          EOF
+          
+          # Set permissions
+          chmod +x app.py
+          chown -R ec2-user:ec2-user /opt/weather-agent
+      Tags:
+        - Key: Name
+          Value: !Ref InstanceName
+
+Outputs:
+  InstanceId:
+    Description: EC2 Instance ID
+    Value: !Ref EC2Instance
+  PublicIP:
+    Description: Public IP address
+    Value: !GetAtt EC2Instance.PublicIp
+  PrivateIP:
+    Description: Private IP address
+    Value: !GetAtt EC2Instance.PrivateIp
