@@ -1,0 +1,58 @@
+default_agent: strands_agentcore_datadog
+agents:
+  strands_agentcore_otlp:
+    name: strands_agentcore_otlp
+    entrypoint: agent-with-OTLP.py
+    platform: linux/arm64
+    container_runtime: docker
+    aws:
+      execution_role: arn:aws:iam::347830095179:role/AmazonBedrockAgentCoreSDKRuntime-us-east-1-0263313398
+      execution_role_auto_create: false
+      account: '347830095179'
+      region: us-east-1
+      ecr_repository: 347830095179.dkr.ecr.us-east-1.amazonaws.com/bedrock-agentcore-strands_agentcore_otlp
+      ecr_auto_create: false
+      network_configuration:
+        network_mode: PUBLIC
+      protocol_configuration:
+        server_protocol: HTTP
+      observability:
+        enabled: true
+    bedrock_agentcore:
+      agent_id: strands_agentcore_otlp-fkSxIyFRHw
+      agent_arn: arn:aws:bedrock-agentcore:us-east-1:347830095179:runtime/strands_agentcore_otlp-fkSxIyFRHw
+      agent_session_id: 67cfb903-cdea-4eaa-9ebd-a15ef6b4dc64
+    codebuild:
+      project_name: bedrock-agentcore-strands_agentcore_otlp-builder
+      execution_role: arn:aws:iam::347830095179:role/AmazonBedrockAgentCoreSDKCodeBuild-us-east-1-0263313398
+      source_bucket: bedrock-agentcore-codebuild-sources-347830095179-us-east-1
+    authorizer_configuration: null
+    oauth_configuration: null
+  strands_agentcore_datadog:
+    name: strands_agentcore_datadog
+    entrypoint: agent.py
+    platform: linux/arm64
+    container_runtime: docker
+    aws:
+      execution_role: arn:aws:iam::347830095179:role/AmazonBedrockAgentCoreSDKRuntime-us-east-1-521403176e
+      execution_role_auto_create: false
+      account: '347830095179'
+      region: us-east-1
+      ecr_repository: 347830095179.dkr.ecr.us-east-1.amazonaws.com/bedrock-agentcore-strands_agentcore_datadog
+      ecr_auto_create: false
+      network_configuration:
+        network_mode: PUBLIC
+      protocol_configuration:
+        server_protocol: HTTP
+      observability:
+        enabled: true
+    bedrock_agentcore:
+      agent_id: strands_agentcore_datadog-HMOkrv3gTQ
+      agent_arn: arn:aws:bedrock-agentcore:us-east-1:347830095179:runtime/strands_agentcore_datadog-HMOkrv3gTQ
+      agent_session_id: fedb8ae2-3e8d-4780-938b-b81567fe5707
+    codebuild:
+      project_name: bedrock-agentcore-strands_agentcore_datadog-builder
+      execution_role: arn:aws:iam::347830095179:role/AmazonBedrockAgentCoreSDKCodeBuild-us-east-1-521403176e
+      source_bucket: bedrock-agentcore-codebuild-sources-347830095179-us-east-1
+    authorizer_configuration: null
+    oauth_configuration: null
